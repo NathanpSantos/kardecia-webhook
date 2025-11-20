@@ -44,6 +44,21 @@ async def webhook_handler(request: Request):
         sender = message["from"]
         text = message["text"]["body"]
 
+        # 🟦  NOVO: Detecta primeira mensagem e envia mensagem inicial
+        texto = text.lower().strip()
+        saudacoes = ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "ei", "hey", "eai", "e aí"]
+
+        if texto in saudacoes:
+            mensagem_inicial = (
+                "✨ Olá! Eu sou a *KARDECIA IA*.\n"
+                "Estou aqui para te ajudar com temas da *Doutrina Espírita*, estudos, reflexões, acolhimento e respostas baseadas nas obras fundamentais do Espiritismo.\n\n"
+                "Como posso te ajudar hoje? 🙏💫"
+            )
+            enviar_whatsapp(sender, mensagem_inicial)
+            print("💬 Mensagem inicial enviada")
+            return JSONResponse(content={"status": "ok"})
+
+        # 🟩 Fluxo normal de resposta
         resposta = gerar_resposta_kardecia(text)
         enviar_whatsapp(sender, resposta)
         print(f"✅ Resposta enviada para {sender}")
