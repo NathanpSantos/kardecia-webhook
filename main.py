@@ -103,7 +103,7 @@ async def webhook_handler(request: Request):
                 send_pdf(sender, PDF_LINKS["livro_dos_espiritos"])
                 return JSONResponse(content={"status": "ok"})
 
-            if "mediuns" in texto or "médiuns" in texto or "mediuns" in texto:
+            if "mediuns" in texto or "médiuns" in texto:
                 send_pdf(sender, PDF_LINKS["livro_dos_mediuns"])
                 return JSONResponse(content={"status": "ok"})
 
