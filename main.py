@@ -4,23 +4,26 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from openai import OpenAI
 
-# 🔐 Inicializa o cliente OpenAI
+# 🔐 Inicializa OpenAI
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# 🎚️ Preferências dos usuários (modo de resposta)
+user_preferences = {}
 
 app = FastAPI()
 
-# 🔐 Pegando dados das variáveis de ambiente
+# 🔐 Variáveis de Ambiente
 TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
 if not TOKEN or not PHONE_ID or not VERIFY_TOKEN:
-    raise RuntimeError("❌ Configure as variáveis WHATSAPP_TOKEN, WHATSAPP_PHONE_ID e VERIFY_TOKEN no ambiente!")
+    raise RuntimeError("❌ Configure WHATSAPP_TOKEN, WHATSAPP_PHONE_ID e VERIFY_TOKEN.")
 
-# 🧠 Memória simples por usuário (últimas 5 mensagens)
+# 🧠 Memória por usuário
 conversation_history = {}
 
-# 📚 Links dos PDFs (TROQUE pelos links reais depois)
+# 📚 PDFs
 PDF_LINKS = {
     "livro_dos_espiritos": {
         "name": "O Livro dos Espíritos – Allan Kardec",
@@ -44,15 +47,14 @@ PDF_LINKS = {
     },
 }
 
-
 @app.get("/")
 async def root():
-    return {"status": "ok", "msg": "Webhook da IA Kardecia rodando 🚀"}
+    return {"status": "ok", "msg": "IA Kardecia rodando!"}
 
 
-# --------------------------------------
-# 1️⃣ VERIFICAÇÃO DO WEBHOOK (GET)
-# --------------------------------------
+# -------------------------------
+# 1️⃣ VERIFICAÇÃO WEBHOOK
+# -------------------------------
 @app.get("/webhook")
 async def verify(request: Request):
     mode = request.query_params.get("hub.mode")
@@ -60,123 +62,131 @@ async def verify(request: Request):
     challenge = request.query_params.get("hub.challenge")
 
     if mode == "subscribe" and token == VERIFY_TOKEN:
-        return PlainTextResponse(content=challenge, status_code=200)
+        return PlainTextResponse(content=challenge)
 
-    return PlainTextResponse(content="Erro de verificação", status_code=403)
+    return PlainTextResponse(content="Erro", status_code=403)
 
 
-# --------------------------------------
-# 2️⃣ RECEBER MENSAGENS (POST)
-# --------------------------------------
+# -------------------------------
+# 2️⃣ RECEBER MENSAGENS
+# -------------------------------
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     data = await request.json()
-    print("📩 WEBHOOK RECEBIDO:")
-    print(data)
+    print("📩 WEBHOOK RECEBIDO:", data)
 
     try:
-        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        entry = data.get("entry", [])[0]
+        change = entry.get("changes", [])[0]
+        value = change.get("value", {})
+
+        # Ignorar eventos de status
+        if "statuses" in value:
+            print("🔎 Evento de status ignorado.")
+            return {"status": "ignored"}
+
+        messages = value.get("messages", [])
+        if not messages:
+            print("⚠️ Nenhuma mensagem.")
+            return {"status": "ignored"}
+
+        message = messages[0]
         sender = message["from"]
         text = message["text"]["body"]
         texto = text.lower().strip()
 
-        # 🟦 SAUDAÇÕES – MENSAGEM INICIAL
-        saudacoes = ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "eai", "e aí", "hey", "ei"]
+        # 🎚️ Modos de resposta
+        if texto in ["/curta", "curto", "resposta curta"]:
+            user_preferences[sender] = {"modo": "curta"}
+            enviar_whatsapp(sender, "✔️ Modo *curto* ativado!")
+            return {"status": "ok"}
+
+        if texto in ["/media", "média", "resposta média"]:
+            user_preferences[sender] = {"modo": "media"}
+            enviar_whatsapp(sender, "✔️ Modo *médio* ativado!")
+            return {"status": "ok"}
+
+        if texto in ["/longa", "resposta longa", "detalhada"]:
+            user_preferences[sender] = {"modo": "longa"}
+            enviar_whatsapp(sender, "✔️ Modo *longo* ativado!")
+            return {"status": "ok"}
+
+        # 🟦 Saudações
+        saudacoes = ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "eai", "ei"]
         if texto in saudacoes:
-            mensagem_inicial = (
-                "✨ Olá! Eu sou a *KARDECIA IA*.\n"
-                "Estou aqui para te ajudar com temas da *Doutrina Espírita*, reflexões, estudos e acolhimento.\n\n"
-                "Você pode pedir, por exemplo:\n"
-                "- Uma explicação sobre algum tema espiritual\n"
-                "- Uma orientação para um momento difícil\n"
-                "- Um trecho comentado do Evangelho\n"
-                "- Um PDF de alguma obra de Allan Kardec\n\n"
-                "Como posso te ajudar hoje? 🙏💫"
+            enviar_whatsapp(sender,
+                "✨ Olá! Eu sou a *KARDECIA IA*, sua assistente espiritual.\n"
+                "Como posso te ajudar hoje? 💫"
             )
-            enviar_whatsapp(sender, mensagem_inicial)
-            return JSONResponse(content={"status": "ok"})
+            return {"status": "ok"}
 
-        # 🟨 PEDIDOS DE PDF
-        if "pdf" in texto or "livro" in texto or "obra" in texto:
-            # checa cada livro específico
-            if "espiritos" in texto or "espíritos" in texto:
-                send_pdf(sender, PDF_LINKS["livro_dos_espiritos"])
-                return JSONResponse(content={"status": "ok"})
-
-            if "mediuns" in texto or "médiuns" in texto:
-                send_pdf(sender, PDF_LINKS["livro_dos_mediuns"])
-                return JSONResponse(content={"status": "ok"})
-
+        # PDFs
+        if "pdf" in texto or "livro" in texto:
+            if "espirit" in texto:
+                send_pdf(sender, PDF_LINKS["livro_dos_espiritos"]); return {"status": "ok"}
+            if "mediun" in texto:
+                send_pdf(sender, PDF_LINKS["livro_dos_mediuns"]); return {"status": "ok"}
             if "evangelho" in texto:
-                send_pdf(sender, PDF_LINKS["evangelho"])
-                return JSONResponse(content={"status": "ok"})
+                send_pdf(sender, PDF_LINKS["evangelho"]); return {"status": "ok"}
+            if "genese" in texto:
+                send_pdf(sender, PDF_LINKS["genese"]); return {"status": "ok"}
+            if "inferno" in texto or "ceu" in texto:
+                send_pdf(sender, PDF_LINKS["ceu_inferno"]); return {"status": "ok"}
 
-            if "genese" in texto or "gênese" in texto:
-                send_pdf(sender, PDF_LINKS["genese"])
-                return JSONResponse(content={"status": "ok"})
-
-            if "ceu" in texto or "céu" in texto:
-                send_pdf(sender, PDF_LINKS["ceu_inferno"])
-                return JSONResponse(content={"status": "ok"})
-
-            # se só falou "pdf" genérico:
-            msg_pdf = (
-                "📚 Posso te enviar os seguintes livros em PDF:\n"
-                "• O Livro dos Espíritos\n"
-                "• O Livro dos Médiuns\n"
-                "• O Evangelho Segundo o Espiritismo\n"
-                "• A Gênese\n"
-                "• O Céu e o Inferno\n\n"
-                "Digite o nome do livro (por exemplo: *Evangelho Segundo o Espiritismo*)."
+            enviar_whatsapp(sender,
+                "📚 Qual livro deseja em PDF?\n"
+                "- O Livro dos Espíritos\n"
+                "- O Livro dos Médiuns\n"
+                "- O Evangelho Segundo o Espiritismo\n"
+                "- A Gênese\n"
+                "- O Céu e o Inferno"
             )
-            enviar_whatsapp(sender, msg_pdf)
-            return JSONResponse(content={"status": "ok"})
+            return {"status": "ok"}
 
-        # 🟩 RESPOSTA NORMAL COM IA + MEMÓRIA
+        # IA NORMAL
         resposta = gerar_resposta_kardecia(sender, text)
 
-        # 🔊 Se o usuário pedir áudio explicitamente
-        pedido_audio = ["audio", "áudio", "manda áudio", "mande áudio", "voz", "quero ouvir", "em áudio"]
-        if any(p in texto for p in pedido_audio):
-            enviar_whatsapp(sender, "🎤 Vou te enviar essa resposta em áudio também, só um instante...")
+        # Pedido de áudio
+        if any(p in texto for p in ["audio", "áudio", "voz"]):
+            enviar_whatsapp(sender, "🎤 Gerando áudio...")
             audio_path = gerar_audio_kardecia(resposta)
-            if audio_path:
-                enviar_audio_whatsapp(sender, audio_path)
-            return JSONResponse(content={"status": "ok"})
+            enviar_audio_whatsapp(sender, audio_path)
+            return {"status": "ok"}
 
-        # 📝 Caso normal: envia apenas texto
         enviar_whatsapp(sender, resposta)
-        return JSONResponse(content={"status": "ok"})
+        return {"status": "ok"}
 
     except Exception as e:
-        print("⚠️ Erro ao processar mensagem:", e)
-        return JSONResponse(content={"status": "error"})
+        print("⚠️ Erro:", e)
+        return {"status": "error"}
 
 
-# --------------------------------------
-# 🤖 IA COM MEMÓRIA — RESPOSTA DA KARDECIA
-# --------------------------------------
-def gerar_resposta_kardecia(user_id: str, msg: str) -> str:
+# -------------------------------
+# 🤖 IA COM MEMÓRIA
+# -------------------------------
+def gerar_resposta_kardecia(user_id: str, msg: str):
     try:
-        # pega histórico do usuário (se existir)
         history = conversation_history.get(user_id, [])
+        modo = user_preferences.get(user_id, {}).get("modo", "media")
+
+        estilo = {
+            "curta": "Responda em até 2 frases, simples e acolhedoras.",
+            "media": "Responda com equilíbrio, acolhimento e calma.",
+            "longa": "Responda com profundidade, espiritualidade e serenidade."
+        }
 
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "Você é a Kardecia IA, uma assistente espiritualista baseada na Doutrina Espírita. "
-                    "Responda sempre de forma acolhedora, calma, respeitosa e esclarecedora. "
-                    "Evite previsões, adivinhações e qualquer promessa de resultados. "
-                    "Use referências às obras de Allan Kardec quando fizer sentido."
-                ),
+                "content":
+                    "Você é a *KARDECIA IA*, uma assistente espiritual amorosa, "
+                    "acolhedora e baseada na Doutrina Espírita. "
+                    "Nunca faça previsões espirituais. \n\n"
+                    f"{estilo[modo]}"
             }
         ]
 
-        # adiciona histórico ao contexto
         messages.extend(history)
-
-        # adiciona a nova pergunta do usuário
         messages.append({"role": "user", "content": msg})
 
         response = openai_client.chat.completions.create(
@@ -186,26 +196,19 @@ def gerar_resposta_kardecia(user_id: str, msg: str) -> str:
 
         resposta = response.choices[0].message.content
 
-        # atualiza memória: acrescenta user e assistant
         history.append({"role": "user", "content": msg})
         history.append({"role": "assistant", "content": resposta})
-
-        # limita para últimas 5 interações (10 mensagens: 5 user + 5 assistant)
-        if len(history) > 10:
-            history = history[-10:]
-
-        conversation_history[user_id] = history
+        conversation_history[user_id] = history[-10:]
 
         return resposta
 
-    except Exception as e:
-        print("🚨 Erro no ChatGPT:", e)
-        return "Peço desculpas, estou com dificuldades temporárias para responder agora. Tente novamente em alguns instantes 🙏"
+    except Exception:
+        return "Desculpe, estou com instabilidade no momento 🙏"
 
 
-# --------------------------------------
-# 🎤 GERAR ÁUDIO DA RESPOSTA
-# --------------------------------------
+# -------------------------------
+# 🎤 ÁUDIO
+# -------------------------------
 def gerar_audio_kardecia(texto: str):
     try:
         audio = openai_client.audio.speech.create(
@@ -213,30 +216,24 @@ def gerar_audio_kardecia(texto: str):
             voice="alloy",
             input=texto
         )
-
         audio_bytes = audio.read()
-        audio_path = "/tmp/kardecia_audio.ogg"
-
-        with open(audio_path, "wb") as f:
+        path = "/tmp/kardecia.ogg"
+        with open(path, "wb") as f:
             f.write(audio_bytes)
-
-        return audio_path
-
-    except Exception as e:
-        print("❌ Erro ao gerar áudio:", e)
+        return path
+    except:
         return None
 
 
-# --------------------------------------
-# 📚 ENVIAR PDF (DOCUMENTO) PELO WHATSAPP
-# --------------------------------------
+# -------------------------------
+# 📚 PDF
+# -------------------------------
 def send_pdf(to: str, pdf_info: dict):
     url = f"https://graph.facebook.com/v20.0/{PHONE_ID}/messages"
     headers = {
         "Authorization": f"Bearer {TOKEN}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
     }
-
     data = {
         "messaging_product": "whatsapp",
         "to": to,
@@ -246,48 +243,38 @@ def send_pdf(to: str, pdf_info: dict):
             "filename": pdf_info["name"]
         }
     }
-
-    resp = requests.post(url, json=data, headers=headers)
-    print(f"📤 Envio de PDF ({pdf_info['name']}):", resp.status_code, resp.text)
+    requests.post(url, json=data, headers=headers)
 
 
-# --------------------------------------
-# 🎧 ENVIAR ÁUDIO PELO WHATSAPP
-# --------------------------------------
+# -------------------------------
+# 🎧 ÁUDIO
+# -------------------------------
 def enviar_audio_whatsapp(to: str, audio_path: str):
     url = f"https://graph.facebook.com/v20.0/{PHONE_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {TOKEN}",
-    }
-
-    with open(audio_path, "rb") as audio_file:
-        files = {"audio": audio_file}
+    with open(audio_path, "rb") as f:
+        files = {"audio": f}
         data = {
             "messaging_product": "whatsapp",
             "to": to,
             "type": "audio",
             "audio": {"filename": "kardecia.ogg"}
         }
+        requests.post(url, data=data, files=files,
+                      headers={"Authorization": f"Bearer {TOKEN}"})
 
-        resp = requests.post(url, data=data, files=files, headers=headers)
-        print("📤 Envio do áudio:", resp.status_code, resp.text)
 
-
-# --------------------------------------
-# 💬 ENVIAR TEXTO PELO WHATSAPP
-# --------------------------------------
+# -------------------------------
+# 💬 TEXTO
+# -------------------------------
 def enviar_whatsapp(to: str, text: str):
     url = f"https://graph.facebook.com/v20.0/{PHONE_ID}/messages"
     headers = {
         "Authorization": f"Bearer {TOKEN}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
     }
-
     data = {
         "messaging_product": "whatsapp",
         "to": to,
-        "text": {"body": text},
+        "text": {"body": text}
     }
-
-    resp = requests.post(url, json=data, headers=headers)
-    print("📤 Envio de texto:", resp.status_code, resp.text)
+    requests.post(url, json=data, headers=headers)
