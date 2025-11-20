@@ -23,6 +23,10 @@ if not TOKEN or not PHONE_ID or not VERIFY_TOKEN:
 # 🧠 Memória por usuário
 conversation_history = {}
 
+# 🧩 Cache para evitar DUPLICAÇÃO
+if not hasattr(app.state, "last_messages"):
+    app.state.last_messages = set()
+
 # 📚 PDFs
 PDF_LINKS = {
     "livro_dos_espiritos": {
@@ -80,18 +84,28 @@ async def webhook_handler(request: Request):
         change = entry.get("changes", [])[0]
         value = change.get("value", {})
 
-        # Ignorar eventos de status
-        if "statuses" in value:
-            print("🔎 Evento de status ignorado.")
+        # 🚫 Ignorar qualquer coisa que não seja mensagem
+        if "messages" not in value:
+            print("🔎 Ignorado: não é mensagem.")
             return {"status": "ignored"}
 
-        messages = value.get("messages", [])
-        if not messages:
-            print("⚠️ Nenhuma mensagem.")
-            return {"status": "ignored"}
-
-        message = messages[0]
+        message = value["messages"][0]
         sender = message["from"]
+        message_id = message["id"]  # <- ID único
+
+        # 🚫 BLOQUEAR MENSAGENS DUPLICADAS
+        if message_id in app.state.last_messages:
+            print("⛔ Mensagem já processada! Ignorando duplicata.")
+            return {"status": "ignored"}
+
+        # Marca como processado
+        app.state.last_messages.add(message_id)
+
+        # Mantém cache leve
+        if len(app.state.last_messages) > 30:
+            app.state.last_messages = set(list(app.state.last_messages)[-20:])
+
+        # Agora pode processar com segurança
         text = message["text"]["body"]
         texto = text.lower().strip()
 
